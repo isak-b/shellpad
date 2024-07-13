@@ -1,1 +1,2 @@
 extensions: [".sh"]
+hide_file_variants: True  # Files of the format `filename[number].ext` are considered variants of `filename.ext`

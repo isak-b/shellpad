@@ -1,10 +1,10 @@
 from textual.app import App, ComposeResult
-from textual.widgets import DirectoryTree, TextArea, Footer
+from textual.widgets import DirectoryTree, Footer
 from textual.containers import Horizontal, Vertical
 from textual.binding import Binding
 
-from utils import load_script
-from widgets import ShellTree, ShellEditor, ShellTerminal
+from utils import find_file_variants, load_script
+from widgets import ShellTree, ShellTabs, ShellEditor, ShellTerminal
 
 
 class ShellPad(App):
@@ -23,18 +23,26 @@ class ShellPad(App):
 
     def compose(self) -> ComposeResult:
         with Horizontal():
-            yield ShellTree(self.path, extensions=self.extensions, id="script_tree")
+            yield ShellTree(self.path, extensions=self.extensions, id="shell_tree")
             yield Vertical(
-                ShellEditor(id="script_editor"),
-                ShellTerminal(id="terminal"),
+                ShellTabs(id="shell_tabs"),
+                ShellEditor(id="shell_editor"),
+                ShellTerminal(id="shell_terminal"),
             )
         yield Footer()
 
-    def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
-        script_editor = self.query_one("#script_editor", TextArea)
-        if event.path not in self.scripts:
-            self.scripts[event.path] = load_script(event.path)
-        script_editor.text = self.scripts[event.path]
+    async def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
+        shell_editor = self.query_one("#shell_editor", ShellEditor)
         if event.path == self.selected_path:
-            script_editor.focus()
+            shell_editor.focus()
         self.selected_path = event.path
+
+        if event.path not in self.scripts:
+            variants = find_file_variants(event.path, as_dict=True)
+            self.scripts[event.path] = {
+                "path": event.path,
+                "variants": {key: load_script(val) for key, val in variants.items()},
+                "selected_id": list(variants.keys())[0],
+            }
+
+        await shell_editor.open_script(self.scripts[event.path])

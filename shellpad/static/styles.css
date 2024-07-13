@@ -1,8 +1,8 @@
-#script_tree {
+#shell_tree {
     width: 33%;
     height: 100%;
 }
 
-#script_editor {
+#shell_editor {
     height: 67%;
 }

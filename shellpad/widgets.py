@@ -1,12 +1,14 @@
 import os
 import asyncio
 import subprocess
+from pathlib import PosixPath
+from typing import Iterator
 
 from textual import events
-from textual.widgets import DirectoryTree, TextArea
+from textual.widgets import DirectoryTree, TextArea, Tabs
 from textual.binding import Binding
 
-from utils import load_script, save_script
+from utils import load_script, save_script, is_valid_dir, is_valid_file
 
 
 class ShellTree(DirectoryTree):
@@ -22,8 +24,8 @@ class ShellTree(DirectoryTree):
         if event.key == "enter":
             ...
         elif event.key == "ctrl+enter":
-            script_editor = self.app.query_one("#script_editor", ShellEditor)
-            await script_editor.action_run()
+            shell_editor = self.app.query_one("#shell_editor", ShellEditor)
+            await shell_editor.action_run()
         elif event.key == "left":
             if os.path.isdir(self.cursor_node.data.path) and self.cursor_node.data.loaded is True:
                 self.action_select_cursor()
@@ -39,20 +41,29 @@ class ShellTree(DirectoryTree):
             else:
                 self.action_select_cursor()
 
-    def filter_paths(self, paths: list) -> list:
+    def filter_paths(self, paths: Iterator[PosixPath]) -> list:
+        """Removes invalid dirs and files from paths
+        NOTE:
+        - paths is a generator that yields a list of PosixPath objects (pointing to dirs and paths) in the current dir
+        - be aware that filtering may fail without raising an exception if the path is treated as str
+        """
+
         output = []
         for path in paths:
-            if os.path.isdir(path):
-                valid_dir = False
-                for _, _, files in os.walk(path):
-                    for file in files:
-                        if any(file.endswith(ext) for ext in self.extensions):
-                            valid_dir = True
-                if valid_dir is True:
-                    output.append(path)
-            elif any(path.name.endswith(ext) for ext in self.extensions):
+            if path.is_dir() and is_valid_dir(str(path), extensions=self.extensions):
+                output.append(path)
+            elif path.is_file() and is_valid_file(
+                str(path), extensions=self.extensions, hide_file_variants=self.app.cfg["hide_file_variants"]
+            ):
                 output.append(path)
         return output
+
+
+class ShellTabs(Tabs):
+    def create_new_tabs(self, ids: list):
+        self.clear()
+        for i in ids:
+            self.add_tab(f"[{i}]")
 
 
 class ShellEditor(TextArea):
@@ -70,10 +81,14 @@ class ShellEditor(TextArea):
 
     def _on_key(self, event: events.Key) -> None:
         if event.key == "escape":
-            script_tree = self.app.query_one("#script_tree", ShellTree)
-            script_tree.focus()
+            shell_tree = self.app.query_one("#shell_tree", ShellTree)
+            shell_tree.focus()
+        if event.key == "up":
+            if self.cursor_location == (0, 0):
+                self.screen.focus_previous()
         if event.key == "left":
             if self.cursor_location == (0, 0):
+                self.screen.focus_previous()
                 self.screen.focus_previous()
         if event.key == "right":
             if self.cursor_at_end_of_text:
@@ -88,22 +103,29 @@ class ShellEditor(TextArea):
         event.prevent_default()
 
     async def action_run(self):
-        terminal = self.app.query_one("#terminal", ShellTerminal)
-        await terminal.write(self.text, prefix=">", add_run_count=True)
+        shell_terminal = self.app.query_one("#shell_terminal", ShellTerminal)
+        await shell_terminal.write(self.text, prefix=">", add_run_count=True)
         await asyncio.sleep(0.01)
-        await terminal.run(self.text, prefix="", add_run_count=False)
+        await shell_terminal.run(self.text, prefix="", add_run_count=False)
 
     def action_save(self):
-        terminal = self.app.query_one("#terminal", ShellTerminal)
+        shell_terminal = self.app.query_one("#shell_terminal", ShellTerminal)
         save_script(self.app.selected_path, self.text)
-        terminal.write(f"Saved: {self.app.selected_path}")
+        shell_terminal.write(f"Saved: {self.app.selected_path}")
 
     def action_reload(self):
         self.text = load_script(self.app.selected_path)
 
+    async def open_script(self, script: dict):
+        tabs = self.app.query_one("#shell_tabs", ShellTabs)
+        tabs.create_new_tabs(script["variants"].keys())
+        selected_id = self.app.scripts[self.app.selected_path]["selected_id"]
+        self.text = script["variants"][selected_id]
+
     def on_text_area_changed(self, _event: TextArea.Changed) -> None:
         if self.text != self.prev_text:
-            self.app.scripts[self.app.selected_path] = self.text
+            selected_id = self.app.scripts[self.app.selected_path]["selected_id"]
+            self.app.scripts[self.app.selected_path]["variants"][selected_id] = self.text
             self.prev_text = self.text
 
 
