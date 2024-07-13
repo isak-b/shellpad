@@ -10,7 +10,7 @@ DEFAULT_CFG_PATH = os.path.join(ROOT_PATH, "config.yaml")
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
-        path = load_cfg(sys.argv[1])
+        path = sys.argv[1]
     else:
         path = os.getcwd()
 
