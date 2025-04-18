@@ -1,40 +1,38 @@
-from textual.app import App, ComposeResult
-from textual.widgets import DirectoryTree, TextArea, Footer
-from textual.containers import Horizontal, Vertical
-from textual.binding import Binding
+import textual
+from textual.widgets import DirectoryTree
 
-from utils import load_script
-from widgets import ShellTree, ShellEditor, ShellTerminal
+from .menu import ShellMenu
+from .tree import ShellTree
+from .editor import ShellEditor
+from .terminal import ShellTerminal
 
 
-class ShellPad(App):
+class ShellPad(textual.app.App):
     CSS_PATH = "static/styles.css"
     BINDINGS = [
-        Binding("escape", "quit", "Quit", key_display="Esc"),
+        textual.binding.Binding("escape", "quit", "Quit", key_display="Esc"),
     ]
 
-    def __init__(self, path: str, cfg: dict):
+    def __init__(self):
         super().__init__()
-        self.path = path
-        self.cfg = cfg
-        self.extensions = cfg["extensions"]
+        self.path = "./locations/git"
         self.selected_path = None
-        self.scripts = {}
 
-    def compose(self) -> ComposeResult:
-        with Horizontal():
-            yield ShellTree(self.path, extensions=self.extensions, id="script_tree")
-            yield Vertical(
-                ShellEditor(id="script_editor"),
-                ShellTerminal(id="terminal"),
+    def compose(self) -> textual.app.ComposeResult:
+        yield textual.widgets.Header(show_clock=True)
+        with textual.containers.Vertical():
+            # TODO: Add more menu options, e.g., the range of terminal runs to show
+            yield ShellMenu(id="shell_menu")
+            yield ShellTerminal(id="shell_terminal")
+            yield textual.containers.Horizontal(
+                ShellTree(self.path, id="shell_tree"),
+                ShellEditor(id="shell_editor"),
             )
-        yield Footer()
+        yield textual.widgets.Footer()
 
-    def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
-        script_editor = self.query_one("#script_editor", TextArea)
-        if event.path not in self.scripts:
-            self.scripts[event.path] = load_script(event.path)
-        script_editor.text = self.scripts[event.path]
+    async def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
+        shell_editor = self.query_one("#shell_editor", ShellEditor)
         if event.path == self.selected_path:
-            script_editor.focus()
+            shell_editor.focus()
         self.selected_path = event.path
+        await shell_editor.action_open_script(self.selected_path)
